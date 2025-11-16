@@ -1,20 +1,21 @@
-// bot.js - Waze RSS → Mastodon 24時間自動投稿【重複投稿100%防止版】
+// bot.js - Waze RSS → Mastodon（毎日19時・重複投稿なし）
 const axios = require('axios');
 const FormData = require('form-data');
 const fs = require('fs');
-const http = require('http');
 
 // ==== 設定 ====
 const RSS_URL = "https://blog.google/waze/rss/";
 const RSS2JSON_API = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(RSS_URL)}`;
+
+// ⬅ GitHub Actions の Secrets に設定
 const MASTODON_INSTANCE = process.env.MASTODON_INSTANCE;
 const ACCESS_TOKEN = process.env.ACCESS_TOKEN;
-const CHECK_INTERVAL = 30 * 60 * 1000;
-const POSTED_FILE = '/tmp/posted.json';
+
+const POSTED_FILE = 'posted.json';
 
 // ==== 環境変数チェック ====
 if (!MASTODON_INSTANCE || !ACCESS_TOKEN) {
-    console.error('エラー: MASTODON_INSTANCE または ACCESS_TOKEN を設定してください！');
+    console.error('エラー: MASTODON_INSTANCE または ACCESS_TOKEN がありません。');
     process.exit(1);
 }
 
@@ -60,7 +61,7 @@ async function postToMastodon(title, link, imageUrl = null) {
     const form = new FormData();
 
     form.append("status", status);
-    form.append("visibility", "unlisted");
+    form.append("visibility", "unlisted"); // 未収載
 
     if (imageUrl) {
         try {
@@ -94,26 +95,27 @@ async function postToMastodon(title, link, imageUrl = null) {
     }
 }
 
-// ==== 新着チェック ====
+// ==== ★ 1日1回・19時用チェック処理 ====
 async function checkAndPost() {
-    console.log(`\n[${new Date().toLocaleString("ja-JP")}] チェック中...`);
+    console.log(`\n[${new Date().toLocaleString("ja-JP")}] 毎日19時チェック開始`);
 
     const items = await fetchRSS();
-    if (items.length === 0) return;
-
-    const latest = items[0];
-
-    // =====================================
-    // 🚫【重複チェック強化】GUID + LINK
-    // =====================================
-    const idKey = `${latest.guid}::${latest.link}`;
-
-    if (posted.includes(idKey)) {
-        console.log("新着なし（すでに投稿済み）");
+    if (items.length === 0) {
+        console.log("RSSが空です");
         return;
     }
 
-    console.log("新着記事を検出 → Mastodon投稿中...");
+    const latest = items[0];
+
+    // **重複判定キー（GUID + Link）**
+    const idKey = `${latest.guid}::${latest.link}`;
+
+    if (posted.includes(idKey)) {
+        console.log("新着なし（前回と同じ → 投稿しない）");
+        return;
+    }
+
+    console.log("新着RSS → 投稿開始");
 
     const imageUrl = extractImage(latest.description);
     const success = await postToMastodon(latest.title, latest.link, imageUrl);
@@ -125,19 +127,5 @@ async function checkAndPost() {
     }
 }
 
-// ==== 初回実行 + 定期実行 ====
 checkAndPost();
-setInterval(checkAndPost, CHECK_INTERVAL);
-
-// =========================================
-// Render Web Service 停止対策：ポートを開く
-// =========================================
-const PORT = process.env.PORT || 3000;
-
-http.createServer((req, res) => {
-    res.writeHead(200, { "Content-Type": "text/plain" });
-    res.end("Mastodon Bot running\n");
-}).listen(PORT, () => {
-    console.log(`HTTPサーバー起動 (PORT=${PORT}) - Render用`);
-});
 
