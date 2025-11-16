@@ -55,7 +55,42 @@ function extractImage(html) {
     return m ? m[1] : null;
 }
 
-// ==== Mastodon 投稿 ====
+// ==== ★ 修正: Mastodon メディアアップロード処理を分離 ====
+async function uploadMedia(imageUrl) {
+    try {
+        // 画像をストリームとして取得
+        const imgRes = await axios.get(imageUrl, { responseType: "stream" });
+        const contentType = imgRes.headers["content-type"] || "image/jpeg";
+        const filename = `image.${contentType.split('/')[1] || 'jpg'}`;
+
+        const mediaForm = new FormData();
+        // 画像ストリームを 'file' パラメータとして追加
+        mediaForm.append("file", imgRes.data, { filename: filename, contentType: contentType });
+
+        // /api/v1/media エンドポイントにアップロード
+        const mediaRes = await axios.post(
+            `https://${MASTODON_INSTANCE}/api/v1/media`,
+            mediaForm,
+            {
+                headers: {
+                    ...mediaForm.getHeaders(),
+                    "Authorization": `Bearer ${ACCESS_TOKEN}`
+                },
+                timeout: 30000 
+            }
+        );
+        
+        // アップロード成功。メディアIDを返す
+        return mediaRes.data.id; 
+
+    } catch (err) {
+        console.warn("画像アップロード失敗:", err.response?.data?.error || err.message);
+        return null;
+    }
+}
+
+
+// ==== Mastodon 投稿 (修正版) ====
 async function postToMastodon(title, link, imageUrl = null) {
     const status = `${title}\n${link}`;
     const form = new FormData();
@@ -63,26 +98,27 @@ async function postToMastodon(title, link, imageUrl = null) {
     form.append("status", status);
     form.append("visibility", "unlisted"); // 未収載
 
+    let mediaId = null;
     if (imageUrl) {
-        try {
-            const imgRes = await axios.get(imageUrl, { responseType: "arraybuffer" });
-            form.append("media[]", Buffer.from(imgRes.data), {
-                filename: "image.jpg",
-                contentType: imgRes.headers["content-type"] || "image/jpeg"
-            });
-        } catch (e) {
-            console.warn("画像添付失敗:", e.message);
-        }
+        // 画像がある場合、まずアップロードする
+        mediaId = await uploadMedia(imageUrl);
+    }
+    
+    if (mediaId) {
+        // 画像IDを取得できたら、ステータスフォームに media_ids[] として追加
+        form.append("media_ids[]", mediaId);
     }
 
     try {
+        // ステータス投稿時は form-data のヘッダーは不要
         await axios.post(
             `https://${MASTODON_INSTANCE}/api/v1/statuses`,
             form,
             {
                 headers: {
-                    ...form.getHeaders(),
-                    "Authorization": `Bearer ${ACCESS_TOKEN}`
+                    // form-data のヘッダーは不要になったため削除（Authorizationのみ残す）
+                    "Authorization": `Bearer ${ACCESS_TOKEN}`,
+                    ...form.getHeaders() // 念のためform-dataのヘッダーも追加
                 }
             }
         );
@@ -94,6 +130,7 @@ async function postToMastodon(title, link, imageUrl = null) {
         return false;
     }
 }
+
 
 // ==== ★ 1日1回・19時用チェック処理 ====
 async function checkAndPost() {
@@ -128,4 +165,3 @@ async function checkAndPost() {
 }
 
 checkAndPost();
-
