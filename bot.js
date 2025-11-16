@@ -7,7 +7,7 @@ const RSS_URL = "https://blog.google/waze/rss/";
 const RSS2JSON_API = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(RSS_URL)}`;
 const MASTODON_INSTANCE = process.env.MASTODON_INSTANCE;
 const ACCESS_TOKEN = process.env.ACCESS_TOKEN;
-const CHECK_INTERVAL = 5 * 60 * 1000;
+const CHECK_INTERVAL = 30 * 60 * 1000;
 const POSTED_FILE = '/tmp/posted.json';
 
 let postedGuids = loadPostedGuids();
