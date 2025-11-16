@@ -43,6 +43,8 @@ async function postToMastodon(title, link, imageUrl = null) {
     const status = `${title}\n${link}`;
     const form = new FormData();
     form.append('status', status);
+    // 【修正点】投稿の公開範囲を未収載(unlisted)に設定
+    form.append('visibility', 'unlisted'); 
 
     if (imageUrl) {
         try {
@@ -81,9 +83,11 @@ async function checkAndPost() {
     if (items.length === 0) return;
 
     const latest = items[0];
+    
+    // 【重複防止ロジック】最新記事が既に投稿済みかチェック
     if (postedGuids.includes(latest.guid)) {
         console.log('新着なし');
-        return;
+        return; // 投稿済みなのでここで処理を終了
     }
 
     console.log('新着発見！投稿中...');
@@ -91,8 +95,9 @@ async function checkAndPost() {
     const success = await postToMastodon(latest.title, latest.link, imageUrl);
 
     if (success) {
+        // 投稿成功した場合、GUIDを記録して重複を防ぐ
         postedGuids.unshift(latest.guid);
-        postedGuids = postedGuids.slice(0, 100);
+        postedGuids = postedGuids.slice(0, 100); // 履歴を100件に制限
         savePostedGuids();
     }
 }
