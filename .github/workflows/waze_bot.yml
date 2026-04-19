@@ -1,0 +1,37 @@
+name: Waze RSS Bot
+
+on:
+  schedule:
+    - cron: '*/10 * * * *' # 10分ごとに実行
+  workflow_dispatch: # 手動実行ボタンを表示
+
+jobs:
+  run-bot:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Restore last run time
+        uses: actions/cache@v4
+        with:
+          path: last_run.txt
+          key: rss-cache-${{ github.run_id }}
+          restore-keys: |
+            rss-cache-
+
+      - name: Run bot
+        env:
+          # ここでGitHubの隠し場所(Secrets)から値を渡します
+          MASTODON_URL: ${{ secrets.MASTODON_URL }}
+          MASTODON_ACCESS_TOKEN: ${{ secrets.MASTODON_ACCESS_TOKEN }}
+          WAZE_RSS_URL: ${{ secrets.WAZE_RSS_URL }}
+        run: python bot.py
